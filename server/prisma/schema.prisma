@@ -21,3 +21,8 @@ model Statement {
   debit    Float
   detail   String   @db.Text
 }
+
+model CheckSum {
+  id   Int    @id @default(autoincrement())
+  hash String @db.Text
+}

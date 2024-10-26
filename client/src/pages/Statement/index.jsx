@@ -1,11 +1,12 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { FaCloudUploadAlt } from "react-icons/fa";
 
-import { Form, Upload, Button, Table, notification, Slider, Row, Col, Input, DatePicker } from "antd";
+import { Form, Upload, Button, Table, notification, Slider, Row, Col, Input, DatePicker, Card } from "antd";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-
+import { Modal } from "antd";
 import axios from "axios";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import dayjs from "dayjs";
 import { useLocation, useNavigate } from "react-router-dom";
 import qs from "qs";
@@ -14,9 +15,12 @@ import _ from "lodash";
 import "dayjs/locale/vi";
 import { FaMoneyBillWave } from "react-icons/fa6";
 
+const { confirm } = Modal;
+
 function Statement() {
   const [formUpload] = Form.useForm();
   const [isLoading, setIsLoading] = useState(false);
+  const [maxCredit, setMaxCredit] = useState(1000000000);
   const [rangeValue, setRangeValue] = useState([0, 1000000000]);
   const [time, setTime] = useState({});
   const [fromDate, setFromDate] = useState(null);
@@ -32,6 +36,8 @@ function Statement() {
       credit: params.credit,
       toDate: params.toDate,
       keyword: params.keyword || "",
+      take: params.take || 20,
+      skip: params.skip || 0,
     };
   }, [search]);
 
@@ -42,13 +48,20 @@ function Statement() {
     }
   }, [searchParams.credit]);
 
-  const debouncedHandleFilter = useCallback(
-    _.debounce((key, value) => {
-      const newFilterParams = { ...searchParams, [key]: value };
-      navigate(`${ROUTES.ADMIN.STATEMENT}?${qs.stringify(newFilterParams)}`);
-    }, 500),
-    [searchParams, navigate]
-  );
+  const debouncedHandleFilter = _.debounce((key, value) => {
+    const newFilterParams = { ...searchParams, [key]: value, take: 20, skip: 0 };
+    navigate(`${ROUTES.ADMIN.STATEMENT}?${qs.stringify(newFilterParams)}`);
+  }, 50);
+  const handleNextPage = () => {
+    const skip = Number(searchParams.skip) + 1;
+    const newFilterParams = { ...searchParams, take: 20, skip };
+    navigate(`${ROUTES.ADMIN.STATEMENT}?${qs.stringify(newFilterParams)}`);
+  };
+  const handlePrevPage = () => {
+    const skip = Number(searchParams.skip) - 1;
+    const newFilterParams = { ...searchParams, take: 20, skip };
+    navigate(`${ROUTES.ADMIN.STATEMENT}?${qs.stringify(newFilterParams)}`);
+  };
 
   useEffect(() => {
     if (searchParams.fromDate) {
@@ -73,11 +86,17 @@ function Statement() {
     queryFn: () => fetchApi(searchParams),
   });
 
+  useEffect(() => {
+    if (maxCredit != data?.data?.maxCredit && data?.data?.maxCredit) {
+      setMaxCredit(data?.data?.maxCredit);
+    }
+  }, [data]);
+
   const mutationUploadFile = useMutation({
-    mutationFn: (formData) => {
+    mutationFn: ({ formData, checkSum }) => {
       setTime({});
       setIsLoading(true);
-      return axios.post("http://localhost:3000/upload-csv", formData);
+      return axios.post(`http://localhost:3000/upload-csv?checkSum=${checkSum}`, formData);
     },
     onSuccess: (response) => {
       setIsLoading(false);
@@ -88,14 +107,29 @@ function Statement() {
     },
     onError: () => {
       setIsLoading(false);
-      console.error("Tải lên file thất bại");
+      showConfirm();
     },
   });
 
   const handleUploadCSV = async (values) => {
     const formData = new FormData();
     formData.append("fileCSV", values.upload[0].originFileObj);
-    mutationUploadFile.mutate(formData);
+    mutationUploadFile.mutate({ formData, checkSum: undefined });
+  };
+  const showConfirm = () => {
+    confirm({
+      title: "File đã được tải lên trước đó",
+      content: "Bạn có muốn ghi đè?.",
+      okText: "Đồng ý",
+      cancelText: "Hủy bỏ",
+      onOk() {
+        const formData = new FormData();
+        const uploadValue = formUpload.getFieldValue("upload");
+        formData.append("fileCSV", uploadValue[0].originFileObj);
+        mutationUploadFile.mutate({ formData, checkSum: true });
+      },
+      onCancel() {},
+    });
   };
 
   const columns = [
@@ -128,6 +162,7 @@ function Statement() {
       title: "Chi tiết giao dịch",
       dataIndex: "detail",
       key: "detail",
+      render: (item) => <div className="whitespace-nowrap overflow-hidden w-[350px] truncate">{item}</div>,
     },
   ];
 
@@ -176,76 +211,88 @@ function Statement() {
         )}
       </div>
       <Row gutter={[32, 32]}>
-        <Col className="shadow pt-4 pb-4" span={7}>
-          <Form layout="vertical">
-            <h1 className="text-[20px] font-medium mb-3">Bộ lọc</h1>
-            <Form.Item name="keyword" initialValue={searchParams.keyword}>
-              <Input
-                onChange={(e) => debouncedHandleFilter("keyword", e.target.value)}
-                placeholder="Nhập từ khóa để tìm kiếm..."
-              />
-            </Form.Item>
-            <p className="my-4 font-bold">Số tiền giao dịch: </p>
-            <Form.Item>
-              <Slider
-                className="flex-1"
-                range
-                min={0}
-                value={rangeValue}
-                max={1000000000}
-                onChange={(value) => {
-                  setRangeValue(value);
-                  debouncedHandleFilter("credit", value);
-                }}
-              />
-              <span className="flex items-center gap-2">
-                {rangeValue[0].toLocaleString()}{" "}
-                <span>
-                  <FaMoneyBillWave />
-                </span>{" "}
-                <span> -</span> {rangeValue[1].toLocaleString()}{" "}
-                <span>
-                  <FaMoneyBillWave />
+        <Col className="pt-12" span={7}>
+          <Card title="Bộ lọc">
+            <Form layout="vertical">
+              <Form.Item name="keyword" initialValue={searchParams.keyword}>
+                <Input
+                  allowClear
+                  onChange={(e) => debouncedHandleFilter("keyword", e.target.value)}
+                  placeholder="Nhập từ khóa để tìm kiếm..."
+                />
+              </Form.Item>
+              <p className="my-4 font-bold">Số tiền giao dịch: </p>
+              <Form.Item>
+                <Slider
+                  className="flex-1"
+                  range
+                  step={1000}
+                  min={0}
+                  value={rangeValue}
+                  max={maxCredit}
+                  onChange={(value) => {
+                    setRangeValue(value);
+                    debouncedHandleFilter("credit", value);
+                  }}
+                />
+                <span className="flex items-center gap-2">
+                  {rangeValue[0].toLocaleString()}{" "}
+                  <span>
+                    <FaMoneyBillWave />
+                  </span>{" "}
+                  <span> -</span> {rangeValue[1].toLocaleString()}{" "}
+                  <span>
+                    <FaMoneyBillWave />
+                  </span>
                 </span>
-              </span>
-            </Form.Item>
-            <Form.Item label="Từ ngày:">
-              <DatePicker
-                className="w-full"
-                showTime
-                format="YYYY-MM-DD HH:mm:ss"
-                onChange={(value) => {
-                  value
-                    ? debouncedHandleFilter("fromDate", dayjs(value).toISOString())
-                    : debouncedHandleFilter("fromDate", undefined);
-                }}
-                value={fromDate}
-                placeholder="Select Date and Time"
-              />
-            </Form.Item>
-            <Form.Item label="Đến ngày:">
-              <DatePicker
-                onChange={(value) => {
-                  value
-                    ? debouncedHandleFilter("toDate", dayjs(value).toISOString())
-                    : debouncedHandleFilter("toDate", undefined);
-                }}
-                value={toDate}
-                className="w-full"
-                showTime
-                format="YYYY-MM-DD HH:mm:ss"
-                placeholder="Select Date and Time"
-              />
-            </Form.Item>
-          </Form>
+              </Form.Item>
+              <Form.Item label="Từ ngày:">
+                <DatePicker
+                  className="w-full"
+                  showTime
+                  format="YYYY-MM-DD HH:mm:ss"
+                  onChange={(value) => {
+                    value
+                      ? debouncedHandleFilter("fromDate", dayjs(value).toISOString())
+                      : debouncedHandleFilter("fromDate", undefined);
+                  }}
+                  value={fromDate}
+                  placeholder="Select Date and Time"
+                />
+              </Form.Item>
+              <Form.Item label="Đến ngày:">
+                <DatePicker
+                  onChange={(value) => {
+                    value
+                      ? debouncedHandleFilter("toDate", dayjs(value).toISOString())
+                      : debouncedHandleFilter("toDate", undefined);
+                  }}
+                  value={toDate}
+                  className="w-full"
+                  showTime
+                  format="YYYY-MM-DD HH:mm:ss"
+                  placeholder="Select Date and Time"
+                />
+              </Form.Item>
+            </Form>
+          </Card>
         </Col>
 
         <Col span={17}>
+          <div className="flex justify-between mb-4">
+            <Button onClick={() => handlePrevPage()} disabled={searchParams.skip == 0} type="primary">
+              Trang trước
+            </Button>
+            <Button disabled={data?.data?.dataList?.length < 20} onClick={() => handleNextPage()} type="primary">
+              Trang sau
+            </Button>
+          </div>
           <div className=" shadow">
             <Table
               loading={isLoading || isFetching}
               dataSource={data?.data?.dataList ? data.data.dataList : []}
               columns={columns}
+              pagination={false}
               rowKey="id"
             />
           </div>

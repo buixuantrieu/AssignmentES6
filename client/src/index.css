@@ -5,3 +5,24 @@
 .ant-table-thead > tr > th {
   white-space: nowrap !important;
 }
+.ant-card-head-title {
+  color: white !important;
+}
+.ant-card-body {
+  background-color: white;
+}
+
+.ant-card {
+  box-shadow: rgba(60, 64, 67, 0.3) 0px 1px 2px 0px, rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
+}
+.ant-table-thead .ant-table-cell {
+  background-color: #7367f0 !important;
+  color: white !important;
+}
+.shadow {
+  box-shadow: rgba(60, 64, 67, 0.3) 0px 1px 2px 0px, rgba(60, 64, 67, 0.15) 0px 2px 6px 2px;
+  border-radius: 8px;
+}
+label {
+  font-weight: 700;
+}
